@@ -1,0 +1,57 @@
+#!/bin/bash -ue
+
+DATE=$(date +%Y%m%d-%H%M)-$(hostname)
+
+export BORG_PASSCOMMAND="cat /etc/borg/{{ borg_name }}_secret"
+export BORG_REPO="ssh://{{ borg_ssh_user }}@{{ borg_ssh_hostname }}:{{ borg_ssh_port }}{{ borg_repo_path }}"
+export BORG_RELOCATED_REPO_ACCESS_IS_OK=no
+export BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK=no
+
+start=$(date +%s)
+
+borg create --stats --one-file-system --compression lz4 --checkpoint-interval 450 --info \
+  "$BORG_REPO"::"$DATE" \
+  {{ borg_folders | map('quote') | join(' ') }}
+
+create_end=$(date +%s)
+
+borg prune -v \
+{% if borg_keep_within is defined %}--keep-within {{ borg_keep_within }} \
+{% endif %}
+{% if borg_keep_last is defined %}--keep-last {{ borg_keep_last }} \
+{% endif %}
+{% if borg_keep_secondly is defined %}--keep-secondly {{ borg_keep_secondly }} \
+{% endif %}
+{% if borg_keep_minutely is defined %}--keep-minutely {{ borg_keep_minutely }} \
+{% endif %}
+{% if borg_keep_hourly is defined %}--keep-hourly {{ borg_keep_hourly }} \
+{% endif %}
+{% if borg_keep_daily is defined %}--keep-daily {{ borg_keep_daily }} \
+{% endif %}
+{% if borg_keep_weekly is defined %}--keep-weekly {{ borg_keep_weekly }} \
+{% endif %}
+{% if borg_keep_monthly is defined %}--keep-monthly {{ borg_keep_monthly }} \
+{% endif %}
+{% if borg_keep_yearly is defined %}--keep-yearly {{ borg_keep_yearly }} \
+{% endif %}
+--list
+
+prune_end=$(date +%s)
+
+# Prometheus reporting
+
+{% if borg_prometheus_enabled %}
+cat <<EOF > {{ borg_prometheus_folder }}/{{ borg_prometheus_textfile_name }}.tmp
+# HELP borg_backup_timestamp Timestamp of backup process completion
+# TYPE borg_backup_timestamp gauge
+borg_backup_timestamp{borg_name="{{ borg_name }}"} ${create_end}
+# HELP borg_backup_create_seconds Number of seconds spent in backup creation
+# TYPE borg_backup_create_seconds gauge
+borg_backup_create_seconds{borg_name="{{ borg_name }}"} $((create_end-start))
+# HELP borg_backup_prune_seconds Number of seconds spent in pruning older backups
+# TYPE borg_backup_prune_seconds gauge
+borg_backup_prune_seconds{borg_name="{{ borg_name }}"} $((prune_end-create_end))
+EOF
+{% endif %}
+
+mv {{ borg_prometheus_folder }}/{{ borg_prometheus_textfile_name }}.tmp {{ borg_prometheus_folder }}/{{ borg_prometheus_textfile_name }}

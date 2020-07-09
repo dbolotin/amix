@@ -1,0 +1,28 @@
+# borg_hostname: ""
+# borg_user: ""
+# borg_password: ""
+# borg_secret: ""
+
+# borg_keep_within:
+# borg_keep_last:
+# borg_keep_secondly:
+# borg_keep_minutely:
+# borg_keep_hourly:
+# borg_keep_daily:
+# borg_keep_weekly:
+# borg_keep_monthly:
+# borg_keep_yearly:
+
+borg_name: backup
+
+# Folder to place files for textfile Prometheus collector
+borg_prometheus_enabled: no
+borg_prometheus_folder: /var/lib/node_exporter
+# borg_prometheus_textfile_name:
+
+# See this for the format:
+# https://www.freedesktop.org/software/systemd/man/systemd.time.html#
+borg_schedule: "*-*-* 03:17"
+
+borg_ssh_port: 22
+borg_initial_backup: no

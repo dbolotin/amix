@@ -1,0 +1,84 @@
+- set_fact:
+    borg_prometheus_textfile_name: '{{ borg_prometheus_textfile_name | default("borg_" + borg_name + ".prom") }}'
+
+- name: Adding Borg PPA repository
+  apt_repository:
+    repo: "ppa:costamagnagianfranco/borgbackup"
+
+- name: Checking Borg is installed on the system
+  package:
+    name:
+      - borgbackup
+    state: present
+
+- name: Creating borg config folder
+  file:
+    path: /etc/borg
+    mode: 0700 # This folder will contain backup secrets
+    state: directory
+
+- name: Creating secret file
+  copy:
+    content: "{{ borg_secret }}"
+    mode: 0600
+    dest: "/etc/borg/{{ borg_name }}_secret"
+
+- name: Adding public ssh key of remote server for authorization for {{ borg_ssh_hostname }}:{{ borg_ssh_port }}
+  known_hosts:
+    name: "{{ borg_ssh_hostname }}"
+    key: "{{ item }}"
+  with_items: "{{ lookup('pipe', 'ssh-keyscan -H -p {{ borg_ssh_port }} {{ borg_ssh_hostname }} 2> /dev/null').splitlines() }}"
+
+- name: Ensure repository initialized
+  command: "borg init --make-parent-dirs --encryption=repokey"
+  environment:
+    BORG_PASSCOMMAND: "cat /etc/borg/{{ borg_name }}_secret"
+    BORG_REPO: "ssh://{{ borg_ssh_user }}@{{ borg_ssh_hostname }}:{{ borg_ssh_port }}{{ borg_repo_path }}"
+  register: command_init
+  async: 60
+  poll: 2
+  changed_when: command_init.rc == 0
+  failed_when: |
+    not (command_init.rc == 0 or
+            (command_init.rc == 2 and
+                ((command_init.stderr | lower).find('repository already exists') != -1)))
+
+- debug:
+    msg: "{{ command_init.stderr }}"
+  when: command_init.rc == 0
+
+- name: Create folder for Prometheus textfiels
+  file:
+    path: "{{ borg_prometheus_folder }}"
+    state: directory
+  when: borg_prometheus_enabled
+
+- name: Creating backup script
+  template:
+    dest: "/etc/borg/{{ borg_name }}_run.sh"
+    mode: 0700
+    src: "run.sh.j2"
+
+- name: Creating systemd timer and service
+  template:
+    dest: "/etc/systemd/system/borg-{{ borg_name }}.{{ item }}"
+    mode: 0644
+    src: "backup.{{ item }}.j2"
+  with_items:
+    - timer
+    - service
+
+- name: "Restart Borg timer {{ borg_name }}"
+  systemd:
+    name: "borg-{{ borg_name }}.timer"
+    enabled: yes
+    daemon_reload: yes
+    state: restarted
+
+- name: Executing Initial Backup
+  systemd:
+    name: "borg-{{ borg_name }}.service"
+    state: started
+  when: borg_initial_backup and command_init.rc == 0
+
+# TODO Infer status reporting right from "borg list" command output (e.g. more robust reporting)

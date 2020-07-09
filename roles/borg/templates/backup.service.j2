@@ -1,0 +1,6 @@
+[Unit]
+Description=BORG Backup {{ borg_name }}
+
+[Service]
+Type=oneshot
+ExecStart=/etc/borg/{{ borg_name }}_run.sh
