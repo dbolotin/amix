@@ -7,7 +7,7 @@
 
 - name: Checking Input Parameters
   assert:
-    that: domain is defined and domain != ''
+    that: domain is defined and domain
     fail_msg: "Please specify target domain."
 
 - name: Extracting target zone ID
@@ -17,7 +17,7 @@
 
 - name:
   assert:
-    that: "hosted_zone_id != ''"
+    that: hosted_zone_id
     success_msg: "HostedZoneID = '{{ hosted_zone_id }}'"
     fail_msg: "Can't find hosted zone for domain {{ domain }}, found {{ hosted_zones | json_query('HostedZones[].Name') | join(',') }} "
 
@@ -52,11 +52,13 @@
     current_records_formatted: "{{ current_records | to_json | from_json | json_query(\"ResourceRecordSets[?Type!='NS' && Type!='SOA'] | [].{Name: Name, Type: Type, TTL: TTL, Values: ResourceRecords[].Value}\") }}"
     target_records_formatted: "{{ target_records_formatted | to_json | from_json }}"
 
-- set_fact:
+- name: Calculating Records to Update
+  set_fact:
     records_to_update_or_create: "{{ target_records_formatted | difference(current_records_formatted)  }}"
     records_to_delete: []
 
-- set_fact:
+- name: Calculating Records to Delete
+  set_fact:
     records_to_delete: "{{ records_to_delete + [record] }}"
   with_items: "{{ current_records_formatted }}"
   loop_control:
@@ -64,7 +66,7 @@
     label: "Adding {{ record.Name }} for delete"
   when: (record.Type + "|" + record.Name) not in target_records_set
 
-- name: "Deleting records"
+- name: Deleting records
   route53:
     state: absent
     hosted_zone_id: "{{ hosted_zone_id }}"
@@ -81,7 +83,7 @@
     label: "{{ record.Name }} {{ record.Type }} {{ record.Values | join('|') }}"
   when: not dry_run
 
-- name: "Adding or updating records"
+- name: Adding or updating records
   route53:
     state: present
     hosted_zone_id: "{{ hosted_zone_id }}"
@@ -98,4 +100,3 @@
     loop_var: record
     label: "{{ record.Name }} {{ record.Type }} {{ record.Values | join('|') }}"
   when: not dry_run
-
